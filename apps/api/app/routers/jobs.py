@@ -41,6 +41,11 @@ async def _cookie_path(db: AsyncSession, user_id: UUID, cookie_profile_id: UUID 
     return str(path)
 
 
+def _is_bot_block(message: str) -> bool:
+    lower = message.lower()
+    return "sign in to confirm" in lower or "not a bot" in lower or "use --cookies" in lower
+
+
 @router.post("/jobs/probe", response_model=ProbeOut)
 async def probe(
     payload: ProbeRequest,
@@ -51,7 +56,25 @@ async def probe(
     try:
         data = await aprobe_url(str(payload.url), cookie_file)
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail=f"Probe failed: {exc}") from exc
+        msg = str(exc)
+        if _is_bot_block(msg):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "youtube_cookies_required",
+                    "message": (
+                        "YouTube blocked this datacenter IP. Export logged-in browser cookies "
+                        "(Netscape cookies.txt) and upload them under Cookies, or place them at "
+                        f"{settings.default_cookies_file} on the server."
+                    ),
+                    "raw": msg[:500],
+                    "guides": [
+                        "https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies",
+                        "https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp",
+                    ],
+                },
+            ) from exc
+        raise HTTPException(status_code=400, detail=f"Probe failed: {msg}") from exc
     return ProbeOut(**data)
 
 

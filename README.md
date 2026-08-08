@@ -41,6 +41,13 @@ certbot --nginx -d download.spikeiq.cloud --non-interactive --agree-tos -m admin
 
 Published ports (localhost only): web `3030`, api `8030`.
 
-## Admin seed
+## YouTube cookies (required on VPS)
 
-Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env`. The API creates that account on first boot.
+YouTube often blocks datacenter IPs with “Sign in to confirm you’re not a bot”.
+
+1. Export Netscape `cookies.txt` from a logged-in YouTube browser session  
+   ([guide](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies))
+2. In StreamLine, upload that file (or Admin → **Set server default**)
+3. Inspect again
+
+Engine package: `yt-dlp[default]` from [`akram1089/yt-dlp`](https://github.com/akram1089/yt-dlp) with Deno + `player_client=web,mweb,tv,android`.

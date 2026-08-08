@@ -58,6 +58,7 @@ class ProbeOut(BaseModel):
     is_playlist: bool = False
     formats: list[FormatOut] = []
     entries: list[PlaylistEntry] = []
+    used_cookies: bool = False
 
 
 class ProbeRequest(BaseModel):
@@ -105,3 +106,9 @@ class CookieProfileOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CookieStatusOut(BaseModel):
+    has_default: bool
+    default_path: str
+    profiles: list[CookieProfileOut] = []

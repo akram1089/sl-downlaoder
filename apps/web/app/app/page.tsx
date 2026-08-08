@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ApiError,
   CookieProfile,
   FormatOut,
   JobOut,
@@ -56,6 +57,8 @@ export default function AppPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [needsCookies, setNeedsCookies] = useState(false);
+  const [hasServerCookies, setHasServerCookies] = useState(false);
   const [focused, setFocused] = useState(false);
 
   const loadJobs = useCallback(async () => {
@@ -73,9 +76,15 @@ export default function AppPage() {
       try {
         const me = await client.me();
         setUser(me);
-        const [j, c] = await Promise.all([client.listJobs(), client.listCookies()]);
+        const [j, c, status] = await Promise.all([
+          client.listJobs(),
+          client.listCookies(),
+          client.cookieStatus(),
+        ]);
         setJobs(j);
         setCookies(c);
+        setHasServerCookies(status.has_default);
+        if (c[0]) setCookieId(c[0].id);
       } catch {
         setToken(null);
         router.replace("/login");
@@ -128,6 +137,7 @@ export default function AppPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setNeedsCookies(false);
     setMessage(null);
     setProbe(null);
     try {
@@ -147,9 +157,14 @@ export default function AppPage() {
           data.formats[0];
         setSelectedFormat(best?.format_id || "");
       }
-      setMessage("Metadata loaded");
+      setMessage(data.used_cookies ? "Metadata loaded (authenticated cookies)" : "Metadata loaded");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Probe failed");
+      if (err instanceof ApiError && err.code === "youtube_cookies_required") {
+        setNeedsCookies(true);
+        setError(err.message);
+      } else {
+        setError(err instanceof Error ? err.message : "Probe failed");
+      }
     } finally {
       setBusy(false);
     }
@@ -190,13 +205,25 @@ export default function AppPage() {
     }
   }
 
-  async function onUploadCookies(file: File | null) {
+  async function onUploadCookies(file: File | null, asDefault = false) {
     if (!file) return;
     setBusy(true);
+    setError(null);
     try {
-      await client.uploadCookies(file.name.replace(/\.[^.]+$/, "") || "cookies", file);
-      setCookies(await client.listCookies());
-      setMessage("Cookies uploaded");
+      if (asDefault) {
+        await client.uploadDefaultCookies(file);
+        setHasServerCookies(true);
+        setMessage("Server default YouTube cookies saved");
+      } else {
+        const profile = await client.uploadCookies(file.name.replace(/\.[^.]+$/, "") || "youtube", file, false);
+        const list = await client.listCookies();
+        setCookies(list);
+        setCookieId(profile.id);
+        setMessage("Cookies uploaded — select them and Inspect again");
+      }
+      setNeedsCookies(false);
+      const status = await client.cookieStatus();
+      setHasServerCookies(status.has_default);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cookie upload failed");
     } finally {
@@ -288,7 +315,7 @@ export default function AppPage() {
                 onChange={(e) => setCookieId(e.target.value)}
                 className="rounded-lg border border-line bg-ink px-2 py-1 text-paper"
               >
-                <option value="">None</option>
+                <option value="">{hasServerCookies ? "Server default" : "None"}</option>
                 {cookies.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -302,14 +329,67 @@ export default function AppPage() {
                 type="file"
                 accept=".txt"
                 className="hidden"
-                onChange={(e) => onUploadCookies(e.target.files?.[0] || null)}
+                onChange={(e) => onUploadCookies(e.target.files?.[0] || null, false)}
               />
             </label>
+            {user.is_admin && (
+              <label className="cursor-pointer rounded-lg border border-dashed border-lime/40 px-3 py-1 text-lime/90 hover:bg-lime/10">
+                Set server default
+                <input
+                  type="file"
+                  accept=".txt"
+                  className="hidden"
+                  onChange={(e) => onUploadCookies(e.target.files?.[0] || null, true)}
+                />
+              </label>
+            )}
             <label className="flex items-center gap-2 text-mist">
               <input type="checkbox" checked={audioOnly} onChange={(e) => setAudioOnly(e.target.checked)} />
               Audio only (mp3)
             </label>
+            <span className={`text-xs ${hasServerCookies ? "text-lime" : "text-mist"}`}>
+              {hasServerCookies ? "Server cookies ready" : "No server cookies yet"}
+            </span>
           </div>
+
+          <AnimatePresence>
+            {needsCookies && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4 text-sm text-paper"
+              >
+                <p className="font-semibold text-amber-200">YouTube bot check — cookies required</p>
+                <ol className="mt-2 list-decimal space-y-1 pl-5 text-mist">
+                  <li>Install a cookie export extension (e.g. “Get cookies.txt LOCALLY”).</li>
+                  <li>Open youtube.com while logged in, export Netscape cookies.txt.</li>
+                  <li>Upload that file here, select it, then Inspect again.</li>
+                  <li>Admins can also set a shared server default for the whole VPS.</li>
+                </ol>
+                <p className="mt-3 text-xs text-mist">
+                  Engine:{" "}
+                  <a
+                    className="underline hover:text-paper"
+                    href="https://github.com/akram1089/yt-dlp"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    akram1089/yt-dlp
+                  </a>{" "}
+                  ·{" "}
+                  <a
+                    className="underline hover:text-paper"
+                    href="https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Cookie export guide
+                  </a>
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <AnimatePresence>
             {(message || error) && (

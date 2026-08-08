@@ -34,7 +34,6 @@ def _sanitize_formats(raw_formats: list[dict[str, Any]] | None) -> list[dict[str
                 "is_audio": bool(is_audio),
             }
         )
-    # Prefer unique by format_id, prefer entries with resolution/filesize
     by_id: dict[str, dict[str, Any]] = {}
     for item in formats:
         prev = by_id.get(item["format_id"])
@@ -43,18 +42,58 @@ def _sanitize_formats(raw_formats: list[dict[str, Any]] | None) -> list[dict[str
     return list(by_id.values())
 
 
-def probe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
-    import yt_dlp
+def resolve_cookie_file(explicit: str | None = None) -> str | None:
+    """Prefer explicit profile path, else default shared youtube.txt if present."""
+    if explicit and Path(explicit).exists():
+        return explicit
+    settings = get_settings()
+    default = Path(settings.default_cookies_file)
+    if default.exists() and default.stat().st_size > 0:
+        return str(default)
+    return explicit if explicit else None
 
+
+def base_ydl_opts(*, cookie_file: str | None = None, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    settings = get_settings()
+    clients = [c.strip() for c in settings.youtube_player_clients.split(",") if c.strip()]
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
-        "skip_download": True,
-        "extract_flat": "in_playlist",
-        "noplaylist": False,
+        "retries": 5,
+        "fragment_retries": 5,
+        "extractor_args": {
+            "youtube": {
+                "player_client": clients,
+            }
+        },
+        # Helps some CDN/geo edge cases; ignore failures
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+        },
     }
-    if cookie_file:
-        opts["cookiefile"] = cookie_file
+    resolved = resolve_cookie_file(cookie_file)
+    if resolved:
+        opts["cookiefile"] = resolved
+    if extra:
+        opts.update(extra)
+    return opts
+
+
+def probe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
+    import yt_dlp
+
+    opts = base_ydl_opts(
+        cookie_file=cookie_file,
+        extra={
+            "skip_download": True,
+            "extract_flat": "in_playlist",
+            "noplaylist": False,
+        },
+    )
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
@@ -89,6 +128,7 @@ def probe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
             "is_playlist": True,
             "formats": [],
             "entries": entries,
+            "used_cookies": bool(opts.get("cookiefile")),
         }
 
     return {
@@ -101,6 +141,7 @@ def probe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
         "is_playlist": False,
         "formats": _sanitize_formats(info.get("formats")),
         "entries": [],
+        "used_cookies": bool(opts.get("cookiefile")),
     }
 
 
@@ -141,18 +182,15 @@ def download_job(
         elif status == "finished":
             progress_callback({"status": "running", "progress": 99.0, "speed": None, "eta": "processing"})
 
-    opts: dict[str, Any] = {
-        "outtmpl": outtmpl,
-        "progress_hooks": [hook],
-        "noprogress": True,
-        "quiet": True,
-        "no_warnings": True,
-        "retries": 5,
-        "fragment_retries": 5,
-        "concurrent_fragment_downloads": 4,
-    }
-    if cookie_file:
-        opts["cookiefile"] = cookie_file
+    opts = base_ydl_opts(
+        cookie_file=cookie_file,
+        extra={
+            "outtmpl": outtmpl,
+            "progress_hooks": [hook],
+            "noprogress": True,
+            "concurrent_fragment_downloads": 4,
+        },
+    )
 
     if audio_only:
         opts["format"] = format_id or "bestaudio/best"
@@ -164,7 +202,6 @@ def download_job(
             }
         ]
     elif format_id:
-        # Prefer selected format + best audio merge when video-only
         opts["format"] = f"{format_id}+bestaudio/best/{format_id}/best"
         opts["merge_output_format"] = "mp4"
     else:
@@ -174,7 +211,6 @@ def download_job(
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
 
-    # Resolve output file
     files = sorted(out_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
     files = [f for f in files if f.is_file()]
     if not files:

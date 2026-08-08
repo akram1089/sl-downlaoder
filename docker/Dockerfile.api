@@ -5,7 +5,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
     curl \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Deno is needed by modern yt-dlp for YouTube JS challenges (n-param / EJS).
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && deno --version
 
 WORKDIR /app
 
@@ -15,7 +20,8 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY apps/api/app /app/app
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    DENO_DIR=/tmp/deno-cache
 
 EXPOSE 8000
 

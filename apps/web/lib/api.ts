@@ -28,6 +28,7 @@ export type ProbeOut = {
   is_playlist: boolean;
   formats: FormatOut[];
   entries: PlaylistEntry[];
+  used_cookies?: boolean;
 };
 
 export type JobOut = {
@@ -63,6 +64,23 @@ export type CookieProfile = {
   created_at: string;
 };
 
+export type CookieStatus = {
+  has_default: boolean;
+  default_path: string;
+  profiles: CookieProfile[];
+};
+
+export class ApiError extends Error {
+  code?: string;
+  guides?: string[];
+  constructor(message: string, opts?: { code?: string; guides?: string[] }) {
+    super(message);
+    this.name = "ApiError";
+    this.code = opts?.code;
+    this.guides = opts?.guides;
+  }
+}
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/api/ws";
 
@@ -86,14 +104,20 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   const res = await fetch(`${API_URL}${path}`, { ...init, headers });
   if (!res.ok) {
-    let detail = "Request failed";
     try {
       const data = await res.json();
-      detail = data.detail || detail;
-    } catch {
-      /* ignore */
+      const detail = data.detail;
+      if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+        throw new ApiError(detail.message || "Request failed", {
+          code: detail.code,
+          guides: detail.guides,
+        });
+      }
+      throw new ApiError(typeof detail === "string" ? detail : "Request failed");
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      throw new ApiError("Request failed");
     }
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -127,11 +151,18 @@ export const client = {
   cancelJob: (id: string) => api<JobOut>(`/jobs/${id}/cancel`, { method: "POST" }),
   retryJob: (id: string) => api<JobOut>(`/jobs/${id}/retry`, { method: "POST" }),
   listCookies: () => api<CookieProfile[]>("/cookies"),
-  uploadCookies: async (name: string, file: File) => {
+  cookieStatus: () => api<CookieStatus>("/cookies/status"),
+  uploadCookies: async (name: string, file: File, asDefault = false) => {
     const fd = new FormData();
     fd.append("name", name);
     fd.append("file", file);
+    fd.append("as_default", asDefault ? "true" : "false");
     return api<CookieProfile>("/cookies", { method: "POST", body: fd });
+  },
+  uploadDefaultCookies: async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api<{ ok: boolean; path: string }>("/cookies/default", { method: "POST", body: fd });
   },
   deleteCookie: (id: string) => api<{ ok: boolean }>(`/cookies/${id}`, { method: "DELETE" }),
   fileUrl: (jobId: string) => `${API_URL}/files/${jobId}`,
