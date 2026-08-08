@@ -36,6 +36,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       DOWNLOAD_DIR: /data/downloads
       COOKIES_DIR: /data/cookies
+    ports:
+      - "127.0.0.1:8030:8000"
     volumes:
       - ./data/downloads:/data/downloads
       - ./data/cookies:/data/cookies
@@ -74,26 +76,12 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://download.spikeiq.cloud/api}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://download.spikeiq.cloud/api/ws}
-    depends_on:
-      - api
-    restart: unless-stopped
-
-  caddy:
-    image: caddy:2-alpine
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - "127.0.0.1:3030:3000"
     depends_on:
-      - web
       - api
     restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
-  caddy_data:
-  caddy_config:

@@ -8,7 +8,8 @@ Production multi-user media downloader for SpikeIQ — branded web UI around [ak
 
 - Next.js UI (`apps/web`)
 - FastAPI + ARQ workers (`apps/api`)
-- Postgres, Redis, ffmpeg, Caddy TLS
+- Postgres, Redis, ffmpeg
+- Host nginx + Certbot (matches SpikeIQ VPS pattern)
 - Engine: yt-dlp from `akram1089/yt-dlp`
 
 ## Features
@@ -21,24 +22,24 @@ Production multi-user media downloader for SpikeIQ — branded web UI around [ak
 - Cookie upload (Netscape `cookies.txt`)
 - History + file retention cleanup
 
-## Quick deploy (VPS)
+## Deploy on SpikeIQ VPS
 
 ```bash
 git clone https://github.com/akram1089/sl-downlaoder.git /opt/streamline
 cd /opt/streamline
 cp .env.example .env
 # edit secrets in .env
+
 docker compose up -d --build
+
+# nginx + TLS
+cp deploy/nginx/download.spikeiq.cloud.conf /etc/nginx/sites-available/download.spikeiq.cloud
+ln -sf /etc/nginx/sites-available/download.spikeiq.cloud /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d download.spikeiq.cloud --non-interactive --agree-tos -m admin@spikeiq.cloud --redirect
 ```
 
-DNS for `download.spikeiq.cloud` must point to the VPS. Caddy issues TLS automatically.
-
-## Local
-
-```bash
-cp .env.example .env
-docker compose up -d --build
-```
+Published ports (localhost only): web `3030`, api `8030`.
 
 ## Admin seed
 
