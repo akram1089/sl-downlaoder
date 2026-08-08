@@ -2,7 +2,9 @@
 
 Production multi-user media downloader for SpikeIQ — branded web UI around [akram1089/yt-dlp](https://github.com/akram1089/yt-dlp).
 
-**Live domain:** https://download.spikeiq.cloud
+**Live domain:** https://download.spikeiq.cloud  
+**Sitemap:** https://download.spikeiq.cloud/sitemap.xml  
+**Robots:** https://download.spikeiq.cloud/robots.txt
 
 ## Stack
 

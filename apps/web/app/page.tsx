@@ -1,22 +1,35 @@
-"use client";
-
-import { motion } from "framer-motion";
 import Link from "next/link";
+import type { Metadata } from "next";
+import { LandingHero } from "@/components/LandingHero";
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE } from "@/lib/site";
+
+export const metadata: Metadata = {
+  title: `${SITE_NAME} — ${SITE_TAGLINE}`,
+  description: SITE_DESCRIPTION,
+  alternates: { canonical: "/" },
+};
+
+const features = [
+  {
+    title: "Format control",
+    body: "Choose Best, 1080p, or 4K targets. StreamLine merges adaptive streams with ffmpeg for real HD output.",
+  },
+  {
+    title: "Live download queue",
+    body: "Track progress, speed, and ETA in real time. Cancel, retry, and keep a personal history.",
+  },
+  {
+    title: "Playlists & cookies",
+    body: "Batch playlist items and upload Netscape cookies for authenticated or restricted sources.",
+  },
+];
 
 export default function LandingPage() {
   return (
     <main className="relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
-        <motion.div
-          className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-lime/20 blur-3xl"
-          animate={{ x: [0, 40, 0], y: [0, 20, 0] }}
-          transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }}
-        />
-        <motion.div
-          className="absolute bottom-10 right-0 h-96 w-96 rounded-full bg-sky-500/10 blur-3xl"
-          animate={{ x: [0, -30, 0], y: [0, -25, 0] }}
-          transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
-        />
+        <div className="absolute -left-24 top-24 h-72 w-72 rounded-full bg-lime/20 blur-3xl" />
+        <div className="absolute bottom-10 right-0 h-96 w-96 rounded-full bg-sky-500/10 blur-3xl" />
         <div
           className="absolute inset-0 opacity-[0.07]"
           style={{
@@ -33,7 +46,7 @@ export default function LandingPage() {
           <div className="font-display text-2xl font-extrabold tracking-tight text-paper">
             Stream<span className="text-lime">Line</span>
           </div>
-          <div className="flex items-center gap-3">
+          <nav className="flex items-center gap-3" aria-label="Primary">
             <Link href="/login" className="text-sm text-mist transition hover:text-paper">
               Sign in
             </Link>
@@ -43,57 +56,40 @@ export default function LandingPage() {
             >
               Get access
             </Link>
-          </div>
+          </nav>
         </header>
 
-        <section className="mt-24 flex flex-1 flex-col justify-center md:mt-0 md:max-w-3xl">
-          <motion.p
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4 text-sm uppercase tracking-[0.22em] text-mist"
-          >
-            SpikeIQ cloud
-          </motion.p>
-          <motion.h1
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.08 }}
-            className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-paper md:text-7xl"
-          >
-            StreamLine
-          </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.16 }}
-            className="mt-6 max-w-xl text-lg leading-relaxed text-mist md:text-xl"
-          >
-            Paste a link. Pick a format. Watch the queue breathe. Private, multi-user media capture for
-            your team — tuned for speed, cookies, playlists, and live progress.
-          </motion.p>
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.24 }}
-            className="mt-10 flex flex-wrap items-center gap-4"
-          >
-            <Link
-              href="/app"
-              className="rounded-full bg-paper px-6 py-3 text-sm font-semibold text-ink transition hover:bg-lime"
-            >
-              Open downloader
-            </Link>
-            <span className="text-sm text-mist">download.spikeiq.cloud</span>
-          </motion.div>
+        <LandingHero />
+
+        <section className="mt-20 grid gap-8 border-t border-line/70 pt-12 md:grid-cols-3" aria-labelledby="features-heading">
+          <h2 id="features-heading" className="sr-only">
+            Features
+          </h2>
+          {features.map((f) => (
+            <article key={f.title}>
+              <h3 className="font-display text-xl font-semibold text-paper">{f.title}</h3>
+              <p className="mt-3 text-sm leading-relaxed text-mist">{f.body}</p>
+            </article>
+          ))}
         </section>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="mt-16 h-px w-full bg-gradient-to-r from-transparent via-lime/40 to-transparent"
-        />
-        <p className="mt-6 text-xs text-mist/70">Powered by yt-dlp · Self-hosted on SpikeIQ</p>
+        <footer className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-line/60 pt-6 text-xs text-mist/80">
+          <p>
+            Powered by yt-dlp · Self-hosted on SpikeIQ ·{" "}
+            <span className="text-mist">download.spikeiq.cloud</span>
+          </p>
+          <div className="flex gap-4">
+            <Link href="/privacy" className="hover:text-paper">
+              Privacy
+            </Link>
+            <Link href="/terms" className="hover:text-paper">
+              Terms
+            </Link>
+            <Link href="/sitemap.xml" className="hover:text-paper">
+              Sitemap
+            </Link>
+          </div>
+        </footer>
       </div>
     </main>
   );
