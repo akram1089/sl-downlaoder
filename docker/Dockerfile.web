@@ -14,11 +14,13 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
     NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_TELEMETRY_DISABLED=1
-# Build Tailwind CSS into public/ so production always has stylesheets
 RUN npx tailwindcss -i ./app/globals.css -o ./public/streamline.css --minify \
     && test -s ./public/streamline.css \
     && wc -c ./public/streamline.css \
-    && npm run build
+    && npm run build \
+    && mkdir -p .next/standalone/public \
+    && cp -f ./public/streamline.css .next/standalone/public/streamline.css \
+    && cp -rf ./public/. .next/standalone/public/
 
 FROM node:22-alpine AS runner
 WORKDIR /app
