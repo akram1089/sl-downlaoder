@@ -53,7 +53,7 @@ class Job(Base):
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     thumbnail: Mapped[str | None] = mapped_column(Text, nullable=True)
     extractor: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    format_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    format_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     audio_only: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), default=JobStatus.queued, index=True)
     progress: Mapped[float] = mapped_column(Float, default=0.0)

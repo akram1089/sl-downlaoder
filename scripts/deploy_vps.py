@@ -45,9 +45,9 @@ with sftp.file("/opt/streamline/.env", "w") as f:
 sftp.close()
 
 run(
-    "cd /opt/streamline && docker compose up -d --remove-orphans > /tmp/sl-up.log 2>&1; "
-    "ec=$?; echo EXIT:$ec; cat /tmp/sl-up.log; exit $ec",
-    timeout=600,
+    "cd /opt/streamline && DOCKER_BUILDKIT=1 docker compose up -d --build --remove-orphans > /tmp/sl-up.log 2>&1; "
+    "ec=$?; echo EXIT:$ec; tail -n 80 /tmp/sl-up.log; exit $ec",
+    timeout=1800,
 )
 
 # nginx site + certbot

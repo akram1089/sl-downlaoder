@@ -49,6 +49,7 @@ export default function AppPage() {
   const [url, setUrl] = useState("");
   const [probe, setProbe] = useState<ProbeOut | null>(null);
   const [selectedFormat, setSelectedFormat] = useState<string>("");
+  const [selectedPreset, setSelectedPreset] = useState<string>("1080");
   const [audioOnly, setAudioOnly] = useState(false);
   const [jobs, setJobs] = useState<JobOut[]>([]);
   const [cookies, setCookies] = useState<CookieProfile[]>([]);
@@ -128,10 +129,18 @@ export default function AppPage() {
   }, [jobs.map((j) => `${j.id}:${j.status}`).join("|")]);
 
   const videoFormats = useMemo(
-    () => (probe?.formats || []).filter((f) => !f.is_audio && (f.resolution || f.vcodec)),
+    () =>
+      (probe?.formats || []).filter(
+        (f) =>
+          !f.is_audio &&
+          f.ext !== "mhtml" &&
+          !String(f.format_id).startsWith("sb") &&
+          (f.height || f.resolution || f.vcodec),
+      ),
     [probe],
   );
   const audioFormats = useMemo(() => (probe?.formats || []).filter((f) => f.is_audio), [probe]);
+  const presets = probe?.presets || [];
 
   async function onProbe(e: FormEvent) {
     e.preventDefault();
@@ -152,13 +161,17 @@ export default function AppPage() {
         setSelectedEntries(map);
       } else {
         const best =
-          data.formats.find((f) => !f.is_audio && (f.note?.includes("1080") || f.resolution?.includes("1080"))) ||
+          data.formats.find((f) => !f.is_audio && (f.height || 0) >= 1080) ||
+          data.formats.find((f) => !f.is_audio && (f.height || 0) >= 720) ||
           data.formats.find((f) => !f.is_audio) ||
           data.formats[0];
         setSelectedFormat(best?.format_id || "");
+        setSelectedPreset((data.max_height || 0) >= 2160 ? "2160" : "1080");
       }
-      setMessage(data.used_cookies ? "Metadata loaded (authenticated cookies)" : "Metadata loaded");
-    } catch (err) {
+      const heightNote = data.max_height ? ` · up to ${data.max_height}p listed` : "";
+      setMessage(
+        (data.used_cookies ? "Metadata loaded (cookies)" : "Metadata loaded") + heightNote,
+      );    } catch (err) {
       if (err instanceof ApiError && err.code === "youtube_cookies_required") {
         setNeedsCookies(true);
         setError(err.message);
@@ -175,6 +188,11 @@ export default function AppPage() {
     setBusy(true);
     setError(null);
     try {
+      const preset = presets.find((p) => p.id === selectedPreset);
+      const format_id = audioOnly
+        ? selectedFormat || undefined
+        : preset?.format || selectedFormat || undefined;
+
       if (probe.is_playlist) {
         const playlist_urls = (probe.entries || [])
           .filter((entry, idx) => selectedEntries[entry.url || entry.id || String(idx)])
@@ -184,7 +202,7 @@ export default function AppPage() {
         await client.createJobs({
           url,
           audio_only: audioOnly,
-          format_id: selectedFormat || undefined,
+          format_id,
           cookie_profile_id: cookieId || undefined,
           playlist_urls,
         });
@@ -192,11 +210,11 @@ export default function AppPage() {
         await client.createJobs({
           url,
           audio_only: audioOnly,
-          format_id: selectedFormat || undefined,
+          format_id,
           cookie_profile_id: cookieId || undefined,
         });
       }
-      setMessage("Queued");
+      setMessage(`Queued${preset && !audioOnly ? ` · ${preset.label}` : ""}`);
       await loadJobs();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Enqueue failed");
@@ -432,18 +450,68 @@ export default function AppPage() {
                 </div>
 
                 {!probe.is_playlist && (
-                  <div className="border-t border-line p-5">
-                    <p className="mb-3 text-sm text-mist">{audioOnly ? "Audio formats" : "Video formats"}</p>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {(audioOnly ? audioFormats : videoFormats).slice(0, 18).map((f, i) => (
-                        <motion.div key={f.format_id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-                          <FormatCard
-                            f={f}
-                            active={selectedFormat === f.format_id}
-                            onClick={() => setSelectedFormat(f.format_id)}
-                          />
-                        </motion.div>
-                      ))}
+                  <div className="border-t border-line p-5 space-y-5">
+                    {!audioOnly && (
+                      <div>
+                        <p className="mb-3 text-sm text-mist">
+                          Quality target (uses ffmpeg merge for HD/4K)
+                          {probe.max_height ? ` · listed up to ${probe.max_height}p` : ""}
+                        </p>
+                        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                          {presets.map((p, i) => (
+                            <motion.button
+                              key={p.id}
+                              type="button"
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: i * 0.03 }}
+                              onClick={() => {
+                                setSelectedPreset(p.id);
+                                setSelectedFormat("");
+                              }}
+                              className={`rounded-xl border px-3 py-3 text-left transition ${
+                                selectedPreset === p.id && !selectedFormat
+                                  ? "border-lime bg-lime/10 shadow-glow"
+                                  : "border-line bg-ink/60 hover:border-mist/50"
+                              }`}
+                            >
+                              <div className="text-sm font-medium text-paper">{p.label}</div>
+                              <div className="mt-1 text-xs text-mist">{p.note}</div>
+                            </motion.button>
+                          ))}
+                        </div>
+                        {(probe.max_height || 0) > 0 && (probe.max_height || 0) < 720 && (
+                          <p className="mt-3 text-xs text-amber-300">
+                            YouTube only exposed low progressive formats in the listing. Presets still request HD/4K via
+                            adaptive merge — re-export fresh cookies if the download stays at 360p.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <p className="mb-3 text-sm text-mist">
+                        {audioOnly ? "Audio formats" : "Advanced · exact streams (optional)"}
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {(audioOnly ? audioFormats : videoFormats).slice(0, 18).map((f, i) => (
+                          <motion.div
+                            key={f.format_id}
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: i * 0.03 }}
+                          >
+                            <FormatCard
+                              f={f}
+                              active={selectedFormat === f.format_id}
+                              onClick={() => {
+                                setSelectedFormat(f.format_id);
+                                setSelectedPreset("");
+                              }}
+                            />
+                          </motion.div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}

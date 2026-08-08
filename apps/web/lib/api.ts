@@ -2,12 +2,20 @@ export type FormatOut = {
   format_id: string;
   ext?: string | null;
   resolution?: string | null;
+  height?: number | null;
   fps?: number | null;
   vcodec?: string | null;
   acodec?: string | null;
   filesize?: number | null;
   note?: string | null;
   is_audio: boolean;
+};
+
+export type QualityPreset = {
+  id: string;
+  label: string;
+  format: string;
+  note?: string | null;
 };
 
 export type PlaylistEntry = {
@@ -27,8 +35,10 @@ export type ProbeOut = {
   webpage_url?: string | null;
   is_playlist: boolean;
   formats: FormatOut[];
+  presets?: QualityPreset[];
   entries: PlaylistEntry[];
   used_cookies?: boolean;
+  max_height?: number;
 };
 
 export type JobOut = {

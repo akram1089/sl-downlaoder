@@ -6,26 +6,85 @@ from typing import Any
 
 from app.config import get_settings
 
+QUALITY_PRESETS: list[dict[str, str]] = [
+    {
+        "id": "best",
+        "label": "Best available",
+        "format": "bv*+ba/b",
+        "note": "Highest video + audio merge",
+    },
+    {
+        "id": "2160",
+        "label": "4K · 2160p",
+        "format": "bv*[height<=2160]+ba/b[height<=2160]/b",
+        "note": "Ultra HD when offered",
+    },
+    {
+        "id": "1440",
+        "label": "1440p",
+        "format": "bv*[height<=1440]+ba/b[height<=1440]/b",
+        "note": "QHD",
+    },
+    {
+        "id": "1080",
+        "label": "1080p",
+        "format": "bv*[height<=1080]+ba/b[height<=1080]/b",
+        "note": "Full HD",
+    },
+    {
+        "id": "720",
+        "label": "720p",
+        "format": "bv*[height<=720]+ba/b[height<=720]/b",
+        "note": "HD",
+    },
+    {
+        "id": "480",
+        "label": "480p",
+        "format": "bv*[height<=480]+ba/b[height<=480]/b",
+        "note": "SD",
+    },
+]
+
+
+def _is_storyboard(f: dict[str, Any]) -> bool:
+    fmt_id = str(f.get("format_id") or "").lower()
+    ext = str(f.get("ext") or "").lower()
+    note = str(f.get("format_note") or "").lower()
+    protocol = str(f.get("protocol") or "").lower()
+    if ext == "mhtml" or protocol == "mhtml":
+        return True
+    if fmt_id.startswith("sb") or "storyboard" in note:
+        return True
+    return False
+
 
 def _sanitize_formats(raw_formats: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     formats: list[dict[str, Any]] = []
     for f in raw_formats or []:
+        if _is_storyboard(f):
+            continue
         format_id = str(f.get("format_id") or "")
         if not format_id:
             continue
         vcodec = f.get("vcodec")
         acodec = f.get("acodec")
         is_audio = (vcodec in (None, "none")) and acodec not in (None, "none")
+        # Skip pure images / unknown junk without codecs
+        if not is_audio and vcodec in (None, "none") and acodec in (None, "none"):
+            continue
         height = f.get("height")
         width = f.get("width")
         resolution = f.get("resolution")
         if not resolution and height:
-            resolution = f"{width or '?'}x{height}" if width else f"{height}p"
+            resolution = f"{height}p"
+        elif resolution and "x" in str(resolution) and height:
+            resolution = f"{height}p"
         formats.append(
             {
                 "format_id": format_id,
                 "ext": f.get("ext"),
                 "resolution": resolution,
+                "height": height,
                 "fps": f.get("fps"),
                 "vcodec": None if vcodec == "none" else vcodec,
                 "acodec": None if acodec == "none" else acodec,
@@ -34,12 +93,25 @@ def _sanitize_formats(raw_formats: list[dict[str, Any]] | None) -> list[dict[str
                 "is_audio": bool(is_audio),
             }
         )
+
     by_id: dict[str, dict[str, Any]] = {}
     for item in formats:
         prev = by_id.get(item["format_id"])
         if not prev or (item.get("filesize") and not prev.get("filesize")):
             by_id[item["format_id"]] = item
-    return list(by_id.values())
+
+    result = list(by_id.values())
+
+    def sort_key(item: dict[str, Any]) -> tuple:
+        height = item.get("height") or 0
+        try:
+            height = int(height)
+        except (TypeError, ValueError):
+            height = 0
+        return (0 if item.get("is_audio") else 1, height, item.get("filesize") or 0)
+
+    result.sort(key=sort_key, reverse=True)
+    return result
 
 
 def resolve_cookie_file(explicit: str | None = None) -> str | None:
@@ -53,9 +125,15 @@ def resolve_cookie_file(explicit: str | None = None) -> str | None:
     return explicit if explicit else None
 
 
-def base_ydl_opts(*, cookie_file: str | None = None, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+def base_ydl_opts(
+    *,
+    cookie_file: str | None = None,
+    clients: list[str] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     settings = get_settings()
-    clients = [c.strip() for c in settings.youtube_player_clients.split(",") if c.strip()]
+    if clients is None:
+        clients = [c.strip() for c in settings.youtube_player_clients.split(",") if c.strip()]
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
@@ -63,10 +141,10 @@ def base_ydl_opts(*, cookie_file: str | None = None, extra: dict[str, Any] | Non
         "fragment_retries": 5,
         "extractor_args": {
             "youtube": {
+                # Prefer TV/web clients that return adaptive (DASH) formats + honor cookies.
                 "player_client": clients,
             }
         },
-        # Helps some CDN/geo edge cases; ignore failures
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -83,28 +161,79 @@ def base_ydl_opts(*, cookie_file: str | None = None, extra: dict[str, Any] | Non
     return opts
 
 
+def _max_video_height(formats: list[dict[str, Any]]) -> int:
+    heights: list[int] = []
+    for f in formats:
+        if f.get("is_audio"):
+            continue
+        h = f.get("height")
+        if h:
+            try:
+                heights.append(int(h))
+            except (TypeError, ValueError):
+                pass
+    return max(heights) if heights else 0
+
+
 def probe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
     import yt_dlp
 
-    opts = base_ydl_opts(
-        cookie_file=cookie_file,
-        extra={
-            "skip_download": True,
-            "extract_flat": "in_playlist",
-            "noplaylist": False,
-        },
-    )
+    settings = get_settings()
+    configured = [c.strip() for c in settings.youtube_player_clients.split(",") if c.strip()]
+    # Try richer client sets until we get adaptive HD formats (YouTube often hides them).
+    client_attempts = [
+        configured,
+        ["tv", "tv_embedded", "web", "mweb"],
+        ["android", "web", "mweb"],
+        ["web"],
+    ]
+    # de-dupe while preserving order
+    seen: set[tuple[str, ...]] = set()
+    attempts: list[list[str]] = []
+    for attempt in client_attempts:
+        key = tuple(attempt)
+        if key and key not in seen:
+            seen.add(key)
+            attempts.append(attempt)
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    best_info: dict[str, Any] | None = None
+    best_formats: list[dict[str, Any]] = []
+    used_cookie = False
+    last_opts: dict[str, Any] = {}
 
-    if not info:
+    for clients in attempts:
+        opts = base_ydl_opts(
+            cookie_file=cookie_file,
+            clients=clients,
+            extra={
+                "skip_download": True,
+                "extract_flat": "in_playlist",
+                "noplaylist": False,
+            },
+        )
+        last_opts = opts
+        used_cookie = bool(opts.get("cookiefile"))
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+        if not info:
+            continue
+        best_info = info
+        if info.get("_type") == "playlist" or info.get("entries"):
+            break
+        formats = _sanitize_formats(info.get("formats"))
+        if _max_video_height(formats) > _max_video_height(best_formats):
+            best_formats = formats
+        if _max_video_height(formats) >= 1080:
+            best_formats = formats
+            break
+
+    if not best_info:
         raise ValueError("No metadata returned")
 
     entries = []
-    is_playlist = bool(info.get("_type") == "playlist" or info.get("entries"))
+    is_playlist = bool(best_info.get("_type") == "playlist" or best_info.get("entries"))
     if is_playlist:
-        for entry in info.get("entries") or []:
+        for entry in best_info.get("entries") or []:
             if not entry:
                 continue
             entries.append(
@@ -119,34 +248,45 @@ def probe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
                 }
             )
         return {
-            "id": info.get("id"),
-            "title": info.get("title"),
-            "thumbnail": info.get("thumbnail"),
-            "duration": info.get("duration"),
-            "extractor": info.get("extractor"),
-            "webpage_url": info.get("webpage_url") or url,
+            "id": best_info.get("id"),
+            "title": best_info.get("title"),
+            "thumbnail": best_info.get("thumbnail"),
+            "duration": best_info.get("duration"),
+            "extractor": best_info.get("extractor"),
+            "webpage_url": best_info.get("webpage_url") or url,
             "is_playlist": True,
             "formats": [],
+            "presets": QUALITY_PRESETS,
             "entries": entries,
-            "used_cookies": bool(opts.get("cookiefile")),
+            "used_cookies": used_cookie,
+            "max_height": 0,
         }
 
+    if not best_formats:
+        best_formats = _sanitize_formats(best_info.get("formats"))
+
     return {
-        "id": info.get("id"),
-        "title": info.get("title"),
-        "thumbnail": info.get("thumbnail"),
-        "duration": info.get("duration"),
-        "extractor": info.get("extractor"),
-        "webpage_url": info.get("webpage_url") or url,
+        "id": best_info.get("id"),
+        "title": best_info.get("title"),
+        "thumbnail": best_info.get("thumbnail"),
+        "duration": best_info.get("duration"),
+        "extractor": best_info.get("extractor"),
+        "webpage_url": best_info.get("webpage_url") or url,
         "is_playlist": False,
-        "formats": _sanitize_formats(info.get("formats")),
+        "formats": best_formats,
+        "presets": QUALITY_PRESETS,
         "entries": [],
-        "used_cookies": bool(opts.get("cookiefile")),
+        "used_cookies": bool(last_opts.get("cookiefile")),
+        "max_height": _max_video_height(best_formats),
     }
 
 
 async def aprobe_url(url: str, cookie_file: str | None = None) -> dict[str, Any]:
     return await asyncio.to_thread(probe_url, url, cookie_file)
+
+
+def _is_format_expression(value: str) -> bool:
+    return any(ch in value for ch in "+*/[]")
 
 
 def download_job(
@@ -184,16 +324,18 @@ def download_job(
 
     opts = base_ydl_opts(
         cookie_file=cookie_file,
+        clients=["tv", "tv_embedded", "web", "mweb", "android"],
         extra={
             "outtmpl": outtmpl,
             "progress_hooks": [hook],
             "noprogress": True,
             "concurrent_fragment_downloads": 4,
+            "merge_output_format": "mp4",
         },
     )
 
     if audio_only:
-        opts["format"] = format_id or "bestaudio/best"
+        opts["format"] = format_id if (format_id and _is_format_expression(format_id)) else (format_id or "bestaudio/best")
         opts["postprocessors"] = [
             {
                 "key": "FFmpegExtractAudio",
@@ -201,12 +343,13 @@ def download_job(
                 "preferredquality": "192",
             }
         ]
+    elif format_id and _is_format_expression(format_id):
+        opts["format"] = format_id
     elif format_id:
+        # YouTube video-only itags need an audio merge for true HD/4K.
         opts["format"] = f"{format_id}+bestaudio/best/{format_id}/best"
-        opts["merge_output_format"] = "mp4"
     else:
         opts["format"] = "bv*+ba/b"
-        opts["merge_output_format"] = "mp4"
 
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)

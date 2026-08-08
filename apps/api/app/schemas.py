@@ -32,12 +32,20 @@ class FormatOut(BaseModel):
     format_id: str
     ext: str | None = None
     resolution: str | None = None
+    height: int | None = None
     fps: float | None = None
     vcodec: str | None = None
     acodec: str | None = None
     filesize: int | None = None
     note: str | None = None
     is_audio: bool = False
+
+
+class QualityPreset(BaseModel):
+    id: str
+    label: str
+    format: str
+    note: str | None = None
 
 
 class PlaylistEntry(BaseModel):
@@ -57,8 +65,10 @@ class ProbeOut(BaseModel):
     webpage_url: str | None = None
     is_playlist: bool = False
     formats: list[FormatOut] = []
+    presets: list[QualityPreset] = []
     entries: list[PlaylistEntry] = []
     used_cookies: bool = False
+    max_height: int = 0
 
 
 class ProbeRequest(BaseModel):

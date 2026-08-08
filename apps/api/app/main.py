@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import Base, SessionLocal, engine
@@ -18,6 +19,10 @@ async def lifespan(_: FastAPI):
     Path(settings.cookies_dir).mkdir(parents=True, exist_ok=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute(text("ALTER TABLE jobs ALTER COLUMN format_id TYPE VARCHAR(255)"))
+        except Exception:
+            pass
     async with SessionLocal() as db:
         await ensure_admin(db)
     yield
