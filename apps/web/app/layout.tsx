@@ -107,6 +107,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <html lang="en" className={`${syne.variable} ${plex.variable}`}>
+      <head>
+        {/* Guarantee styles even if Next standalone omits CSS chunks */}
+        <link rel="stylesheet" href="/streamline.css" />
+      </head>
       <body className="font-sans antialiased">
         <script
           type="application/ld+json"
