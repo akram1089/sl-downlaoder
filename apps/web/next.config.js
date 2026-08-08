@@ -7,6 +7,12 @@ const nextConfig = {
       { protocol: "http", hostname: "**" },
     ],
   },
+  async redirects() {
+    return [
+      { source: "/app", destination: "/console", permanent: false },
+      { source: "/app/:path*", destination: "/console", permanent: false },
+    ];
+  },
   async headers() {
     return [
       {

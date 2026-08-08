@@ -20,7 +20,7 @@ export default function RegisterPage() {
     try {
       await client.register(email, password);
       await client.login(email, password);
-      router.push("/app");
+      router.push("/console");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

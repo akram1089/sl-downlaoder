@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, Syne } from "next/font/google";
 import "./globals.css";
+import { StyleLoader } from "@/components/StyleLoader";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TAGLINE, SITE_URL } from "@/lib/site";
 
 const syne = Syne({
@@ -108,6 +109,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${syne.variable} ${plex.variable}`}>
       <body className="font-sans antialiased">
+        <StyleLoader />
         <link rel="stylesheet" href="/streamline.css" precedence="high" />
         <script
           type="application/ld+json"
