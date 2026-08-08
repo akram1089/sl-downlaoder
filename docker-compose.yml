@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-streamline}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-streamline}
+      POSTGRES_DB: ${POSTGRES_DB:-streamline}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-streamline}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-streamline}:${POSTGRES_PASSWORD:-streamline}@postgres:5432/${POSTGRES_DB:-streamline}
+      REDIS_URL: redis://redis:6379/0
+      DOWNLOAD_DIR: /data/downloads
+      COOKIES_DIR: /data/cookies
+    volumes:
+      - ./data/downloads:/data/downloads
+      - ./data/cookies:/data/cookies
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    command: ["arq", "app.worker.WorkerSettings"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-streamline}:${POSTGRES_PASSWORD:-streamline}@postgres:5432/${POSTGRES_DB:-streamline}
+      REDIS_URL: redis://redis:6379/0
+      DOWNLOAD_DIR: /data/downloads
+      COOKIES_DIR: /data/cookies
+    volumes:
+      - ./data/downloads:/data/downloads
+      - ./data/cookies:/data/cookies
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://download.spikeiq.cloud/api}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-wss://download.spikeiq.cloud/api/ws}
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
